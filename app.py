@@ -9,7 +9,7 @@ from botocore.exceptions import ClientError, NoCredentialsError
 # ----------------- Configuration -----------------
 AWS_REGION = "eu-north-1"
 DATABASE = "football_db"
-TABLE = "raw_portfolio_lake_yevhen_3991"
+TABLE = "live_portfolio_projected"
 S3_OUTPUT = "s3://portfolio-lake-yevhen-3991/athena-results/"
 
 st.set_page_config(
@@ -43,37 +43,12 @@ def get_data():
         # SQL Query Logic with Deduplication and Data Validation
         query = f"""
         WITH RankedPlayers AS (
-            SELECT 
-                id,
-                name as web_name,
-                team,
-                position_id,
-                goals,
-                assists,
-                clean_sheets,
-                minutes,
-                yellow_cards,
-                red_cards,
-                saves,
-                form,
-                influence,
-                creativity,
-                threat,
-                ict_index,
-                chance_of_playing,
-                injury_news,
-                ingested_at,
-                -- Rank 1 = The latest file we ingested
-                ROW_NUMBER() OVER (
-                    PARTITION BY id 
-                    ORDER BY ingested_at DESC
-                ) as rank
-            FROM "{DATABASE}"."{TABLE}"
-            WHERE assists IS NOT NULL -- Critical Fix: Ignore rows from corrupted ingestion batches
+            SELECT
+                *,
+                ROW_NUMBER() OVER (PARTITION BY id ORDER BY ingested_at DESC) as rank
+            FROM "{DATABASE}"."{TABLE}" 
         )
-        SELECT *
-        FROM RankedPlayers
-        WHERE rank = 1
+        SELECT * FROM RankedPlayers WHERE rank = 1
         """
         
         df = wr.athena.read_sql_query(
@@ -83,6 +58,11 @@ def get_data():
             boto3_session=session,
             ctas_approach=False
         )
+        
+        # Renaissance Refactor: Ensure compatibility if column names changed in projection
+        if 'name' in df.columns and 'web_name' not in df.columns:
+            df.rename(columns={'name': 'web_name'}, inplace=True)
+            
         return df
 
     except NoCredentialsError:
