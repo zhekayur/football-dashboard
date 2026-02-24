@@ -439,8 +439,8 @@ def show_player_stats():
         # KPI Row for Player
         st.subheader(f"Summary for {selected_player}")
         pkpi1, pkpi2, pkpi3 = st.columns(3)
-        with pkpi1: st.metric("Total Goals", int(player_df['goals'].sum()))
-        with pkpi2: st.metric("Total Assists", int(player_df['assists'].sum()))
+        with pkpi1: st.metric("Total Goals", int(player_df['goals'].max()))
+        with pkpi2: st.metric("Total Assists", int(player_df['assists'].max()))
         with pkpi3: st.metric("Max Pts in a Day", int(player_df['total_points'].max()))
 
         # Trends
