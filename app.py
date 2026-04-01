@@ -5,6 +5,7 @@ import boto3
 import plotly.express as px
 import os
 from botocore.exceptions import ClientError, NoCredentialsError
+import tracker
 
 # ----------------- Configuration -----------------
 AWS_REGION = "eu-north-1"
@@ -36,6 +37,7 @@ except (FileNotFoundError, KeyError, AttributeError):
 def get_live_data():
     try:
         session = boto3.Session(region_name=AWS_REGION)
+        tracker.track_event("api_call", {"type": "athena_live_data"})
         
         # SQL Query Logic with Deduplication and Data Validation
         query = f"""
@@ -73,6 +75,7 @@ def get_live_data():
 def get_historical_data():
     try:
         session = boto3.Session(region_name=AWS_REGION)
+        tracker.track_event("api_call", {"type": "athena_historical_data"})
         
         # Fetch data for time series analysis
         # Using 'name' as it's in the primary schema, but renaming to 'web_name' for app consistency
@@ -140,6 +143,12 @@ def show_metrics_glossary():
 with st.sidebar:
     st.title("📌 Navigation")
     page = st.radio("Go to", ["Live Control Room", "Team Analysis", "Player Stats"])
+    
+    # Track Page Views
+    if "current_page" not in st.session_state or st.session_state.current_page != page:
+        st.session_state.current_page = page
+        tracker.track_event("page_view", {"page": page}, page_context=page)
+        
     st.markdown("---")
     show_metrics_glossary()
     st.markdown("---")
@@ -162,6 +171,10 @@ def show_live_dashboard():
             teams = sorted(df['team'].unique().tolist())
             selected_teams = st.multiselect("Select Team(s)", options=teams, default=teams)
             
+            if "last_live_teams" not in st.session_state or st.session_state.last_live_teams != selected_teams:
+                st.session_state.last_live_teams = selected_teams
+                tracker.track_event("filter_change", {"filter": "team", "values": selected_teams}, page_context="Live Control Room")
+            
             # Player Filter (dependent on team selection)
             if selected_teams:
                 available_players = sorted(df[df['team'].isin(selected_teams)]['web_name'].unique().tolist())
@@ -169,6 +182,10 @@ def show_live_dashboard():
                 available_players = sorted(df['web_name'].unique().tolist())
                 
             selected_players = st.multiselect("Select Player(s)", options=available_players)
+            
+            if "last_live_players" not in st.session_state or st.session_state.last_live_players != selected_players:
+                st.session_state.last_live_players = selected_players
+                tracker.track_event("filter_change", {"filter": "player", "values": selected_players}, page_context="Live Control Room")
             
         st.markdown("---")
         st.markdown("**Data Source**:\nAWS Athena (Real-time)")
@@ -387,9 +404,15 @@ def show_team_analysis():
     if df_hist is not None and not df_hist.empty:
         teams = sorted(df_hist['team'].unique().tolist())
         selected_team = st.selectbox("Select Team", options=teams)
+        if "last_hist_team" not in st.session_state or st.session_state.last_hist_team != selected_team:
+            st.session_state.last_hist_team = selected_team
+            tracker.track_event("filter_change", {"filter": "team", "values": selected_team}, page_context="Team Analysis")
         
         metrics = ["goals", "assists", "total_points", "creativity", "influence", "form", "threat", "ict_index"]
         selected_metric = st.selectbox("Select Metric", options=metrics)
+        if "last_hist_metric" not in st.session_state or st.session_state.last_hist_metric != selected_metric:
+            st.session_state.last_hist_metric = selected_metric
+            tracker.track_event("filter_change", {"filter": "metric", "values": selected_metric}, page_context="Team Analysis")
         
         # Aggregate by date
         team_df = df_hist[df_hist['team'] == selected_team].copy()
@@ -426,6 +449,9 @@ def show_player_stats():
         # Player Selection
         teams = sorted(df_hist['team'].unique().tolist())
         sel_team = st.selectbox("Filter by Team", options=["All"] + teams)
+        if "last_player_team" not in st.session_state or st.session_state.last_player_team != sel_team:
+            st.session_state.last_player_team = sel_team
+            tracker.track_event("filter_change", {"filter": "team_filter", "values": sel_team}, page_context="Player Stats")
         
         if sel_team != "All":
             players = sorted(df_hist[df_hist['team'] == sel_team]['web_name'].unique().tolist())
@@ -433,6 +459,9 @@ def show_player_stats():
             players = sorted(df_hist['web_name'].unique().tolist())
             
         selected_player = st.selectbox("Select Player", options=players)
+        if "last_player_sel" not in st.session_state or st.session_state.last_player_sel != selected_player:
+            st.session_state.last_player_sel = selected_player
+            tracker.track_event("filter_change", {"filter": "player", "values": selected_player}, page_context="Player Stats")
         
         player_df = df_hist[df_hist['web_name'] == selected_player].copy()
         
