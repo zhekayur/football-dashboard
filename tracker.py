@@ -41,22 +41,24 @@ def get_session_id():
     return st.session_state['session_id']
 
 def get_client_metadata():
-    """Extracts IP, User-Agent from Streamlit headers."""
+    """Extracts IP, User-Agent from Streamlit headers. Also silently captures debug info."""
     ip_address = "unknown"
     user_agent = "unknown"
+    debug_info = {}
     try:
         if hasattr(st, "context") and hasattr(st.context, "headers"):
             headers = st.context.headers
+            debug_info["raw_keys"] = list(headers.keys())
             # X-Forwarded-For is commonly used in proxies/Streamlit Cloud
             ip_address = headers.get("X-Forwarded-For", headers.get("Host", "unknown"))
             # Sometimes it is a comma separated list
             if ip_address and ',' in ip_address:
                 ip_address = ip_address.split(',')[0].strip()
             user_agent = headers.get("User-Agent", "unknown")
-    except Exception:
-        pass
+    except Exception as e:
+        debug_info["error"] = str(e)
     
-    return ip_address, user_agent
+    return ip_address, user_agent, debug_info
 
 def _send_to_dynamodb(payload):
     """Background task to send payload to AWS DynamoDB."""
@@ -82,7 +84,9 @@ def track_event(event_action, event_details=None, page_context=""):
     if event_details is None:
         event_details = {}
 
-    ip_address, user_agent = get_client_metadata()
+    ip_address, user_agent, debug_info = get_client_metadata()
+    if debug_info:
+        event_details["debug_headers"] = debug_info
 
     payload = {
         "event_id": str(uuid.uuid4()),
