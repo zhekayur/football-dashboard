@@ -41,24 +41,33 @@ def get_session_id():
     return st.session_state['session_id']
 
 def get_client_metadata():
-    """Extracts IP, User-Agent from Streamlit headers. Also silently captures debug info."""
+    """Extracts IP, User-Agent from Streamlit headers. Uses robust case-insensitive iteration."""
     ip_address = "unknown"
     user_agent = "unknown"
-    debug_info = {}
     try:
         if hasattr(st, "context") and hasattr(st.context, "headers"):
             headers = st.context.headers
-            debug_info["raw_keys"] = list(headers.keys())
-            # X-Forwarded-For is commonly used in proxies/Streamlit Cloud
-            ip_address = headers.get("X-Forwarded-For", headers.get("Host", "unknown"))
-            # Sometimes it is a comma separated list
-            if ip_address and ',' in ip_address:
-                ip_address = ip_address.split(',')[0].strip()
-            user_agent = headers.get("User-Agent", "unknown")
-    except Exception as e:
-        debug_info["error"] = str(e)
+            # Convert to dictionary safely and do a manual search
+            headers_dict = dict(headers)
+            
+            for k, v in headers_dict.items():
+                k_lower = str(k).lower()
+                if k_lower == "x-forwarded-for" and v:
+                    ip_address = str(v).split(',')[0].strip()
+                elif k_lower == "user-agent" and v:
+                    user_agent = str(v)
+                    
+            # Fallback for IP if X-Forwarded-For is missing
+            if ip_address == "unknown":
+                for k, v in headers_dict.items():
+                    if str(k).lower() == "host" and v:
+                        ip_address = str(v).split(',')[0].strip()
+                        break
+                        
+    except Exception:
+        pass
     
-    return ip_address, user_agent, debug_info
+    return ip_address, user_agent
 
 def _send_to_dynamodb(payload):
     """Background task to send payload to AWS DynamoDB."""
@@ -84,9 +93,7 @@ def track_event(event_action, event_details=None, page_context=""):
     if event_details is None:
         event_details = {}
 
-    ip_address, user_agent, debug_info = get_client_metadata()
-    if debug_info:
-        event_details["debug_headers"] = debug_info
+    ip_address, user_agent = get_client_metadata()
 
     payload = {
         "event_id": str(uuid.uuid4()),
